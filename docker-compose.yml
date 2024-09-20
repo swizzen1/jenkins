@@ -10,7 +10,7 @@ services:
     volumes:
       - jenkins_home:/var/jenkins_home
     environment:
-      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=true
 
   mysql:
     image: mysql:8.0
