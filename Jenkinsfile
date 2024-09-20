@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('Clone Repository') {
             steps {
-                git 'https://github.com/yourusername/your-laravel-repo.git'
+                git 'https://github.com/swizzen1/jenkins.git'
             }
         }
 
