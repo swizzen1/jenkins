@@ -1,66 +1,110 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Laravel CI/CD Pipeline with Jenkins & Docker
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A ready-to-run, fully containerized CI/CD environment for Laravel applications. One `docker-compose up` gives you a Jenkins server, a MySQL database, phpMyAdmin, and a PHP 8.2 + Nginx application container, wired together with a Jenkins pipeline that installs dependencies and runs the Laravel test suite on every build.
 
-## About Laravel
+## What's Inside
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+| Service | Image | Port | Purpose |
+|---|---|---|---|
+| **Jenkins** | `jenkins/jenkins:lts` | 8080, 50000 | CI server running the pipeline |
+| **Laravel App** | `webdevops/php-nginx:8.2` | 8000 | Application runtime (PHP 8.2 + Nginx) |
+| **MySQL** | `mysql:8.0` | 3306 | Application database |
+| **phpMyAdmin** | `phpmyadmin/phpmyadmin` | 8081 | Database administration UI |
+| **Composer** | `composer:latest` | - | Dependency installation (on-demand) |
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Pipeline Stages
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+The included `Jenkinsfile` defines a declarative pipeline:
 
-## Learning Laravel
+1. **Clone Repository** - pulls the project source
+2. **Install Dependencies** - `composer install` inside a dedicated container
+3. **Run Tests** - executes `php artisan test` (PHPUnit) in the app container
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+Build status is reported on success/failure via post actions. The pipeline runs entirely inside Docker, so Jenkins agents need nothing preinstalled except Docker itself.
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+## Quick Start
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+```bash
+git clone https://github.com/swizzen1/jenkins
+cd jenkins
 
-## Laravel Sponsors
+# Start the full stack
+docker-compose up -d
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+# Jenkins UI
+open http://localhost:8080
 
-### Premium Partners
+# Application
+open http://localhost:8000
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+# phpMyAdmin
+open http://localhost:8081
+```
 
-## Contributing
+### First-time Jenkins setup
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+1. Grab the initial admin password:
+   ```bash
+   docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+   ```
+2. Open `http://localhost:8080`, paste the password, and install the suggested plugins.
+3. Create a new **Pipeline** job and point it at this repository - the `Jenkinsfile` is picked up automatically.
 
-## Code of Conduct
+### Environment
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Copy the environment file and generate the app key inside the container:
 
-## Security Vulnerabilities
+```bash
+docker-compose run laravel cp .env.example .env
+docker-compose run laravel php artisan key:generate
+docker-compose run laravel php artisan migrate
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Database credentials (matching `docker-compose.yml`):
+
+```env
+DB_CONNECTION=mysql
+DB_HOST=mysql
+DB_PORT=3306
+DB_DATABASE=laravel_db
+DB_USERNAME=laravel_user
+DB_PASSWORD=laravel_password
+```
+
+## Why This Setup
+
+- **Reproducible builds**: every pipeline stage runs in a clean container, no "works on my machine"
+- **Zero host dependencies**: PHP, Composer, and MySQL versions are pinned in `docker-compose.yml`
+- **Easy to extend**: add stages (static analysis, code style, deployment) by editing the `Jenkinsfile`
+
+## Extending the Pipeline
+
+Typical additions for a production pipeline:
+
+```groovy
+stage('Static Analysis') {
+    steps {
+        sh 'docker-compose run laravel ./vendor/bin/phpstan analyse'
+    }
+}
+stage('Code Style') {
+    steps {
+        sh 'docker-compose run laravel ./vendor/bin/pint --test'
+    }
+}
+stage('Deploy') {
+    when { branch 'main' }
+    steps {
+        // rsync / Envoyer / kubectl rollout, etc.
+    }
+}
+```
+
+## Requirements
+
+- Docker & Docker Compose
+- 2 GB+ free RAM (Jenkins + MySQL)
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Open-sourced under the [MIT license](https://opensource.org/licenses/MIT).
